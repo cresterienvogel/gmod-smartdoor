@@ -47,9 +47,7 @@ end
 if CLIENT then
 	language.Add("tool.smartdoor.name", "Smart Door")
 	language.Add("tool.smartdoor.desc", "Allows to create a smart door")
-	language.Add("tool.smartdoor.left", "Add a smart door")
-	language.Add("tool.smartdoor.right", "Remove an existed smart door")
-	language.Add("tool.smartdoor.0", "Pretty nothing more to say")
+	language.Add("tool.smartdoor.0", "Press R on the prop to customize it's whitelist")
 
 	surface.CreateFont("smartdoor_hud", {size = 26, weight = 300, antialias = true, extended = true, font = "Roboto Condensed"})
 	surface.CreateFont("smartdoor_hud_shadow", {size = 27, weight = 300, antialias = true, extended = true, blursize = 1.5, font = "Roboto Condensed"})
@@ -87,11 +85,49 @@ if CLIENT then
 			end
 		end
 	end)
+
+	net.Receive("Smart Door Get Whitelist", function()
+		local ent = net.ReadEntity()
+		local tbl = net.ReadTable()
+	
+		local menu = DermaMenu()
+	
+		local Add = menu:AddSubMenu("Add to whitelist")
+		for _, pl in pairs(player.GetAll()) do
+			if table.HasValue(tbl, pl) or pl == LocalPlayer() then
+				continue
+			end
+	
+			Add:AddOption(pl:Name(), function()
+				net.Start("Smart Door Add Whitelist")
+					net.WriteEntity(ent)
+					net.WriteEntity(pl)
+				net.SendToServer()
+			end):SetIcon("icon16/user.png")
+		end
+	
+		local Remove = menu:AddSubMenu("Remove from whitelist")
+		for _, pl in pairs(tbl) do
+			Remove:AddOption(pl:Name(), function()
+				net.Start("Smart Door Remove Whitelist")
+					net.WriteEntity(ent)
+					net.WriteEntity(pl)
+				net.SendToServer()
+			end):SetIcon("icon16/user_green.png")
+		end
+	
+		menu:MakePopup()
+		menu:Open()
+	end)
 end
 
 if SERVER then
-	util.AddNetworkString("Smart Door Whitelist")
-	net.Receive("Smart Door Whitelist", function()
+	util.AddNetworkString("Smart Door Get Whitelist")
+	util.AddNetworkString("Smart Door Set Whitelist")
+	util.AddNetworkString("Smart Door Add Whitelist")
+	util.AddNetworkString("Smart Door Remove Whitelist")
+
+	net.Receive("Smart Door Set Whitelist", function()
 		local ent = net.ReadEntity()
 		local tbl = net.ReadTable()
 
@@ -100,6 +136,30 @@ if SERVER then
 		end
 
 		ent.Whitelist = tbl
+		ent.WhitelistReady = true
+	end)
+
+	net.Receive("Smart Door Add Whitelist", function()
+		local ent = net.ReadEntity()
+		local pl = net.ReadEntity()
+
+		if not IsValid(ent) or ent.WhitelistReady or table.HasValue(ent.Whitelist, pl) then
+			return
+		end
+
+		table.insert(ent.Whitelist, pl)
+		ent.WhitelistReady = true
+	end)
+
+	net.Receive("Smart Door Remove Whitelist", function()
+		local ent = net.ReadEntity()
+		local pl = net.ReadEntity()
+
+		if not IsValid(ent) or ent.WhitelistReady or not table.HasValue(ent.Whitelist, pl) then
+			return
+		end
+
+		table.RemoveByValue(ent.Whitelist, pl)
 		ent.WhitelistReady = true
 	end)
 
@@ -154,6 +214,10 @@ if SERVER then
 	
 		if self.DoorSound ~= "" then
 			self:EmitSound(self.DoorSound)
+		end
+
+		if not self.WhitelistReady then
+			self.WhitelistReady = true
 		end
 	end
 	
@@ -222,7 +286,7 @@ function TOOL.BuildCPanel(panel)
 	})
 
 	panel:AddControl("CheckBox", {
-		Label = "Steam friends able to open the door",
+		Label = "Steam friends are able to open the door",
 		Command = "smartdoor_friends"
 	})
 end
@@ -256,7 +320,7 @@ function TOOL:LeftClick(tr)
 				end
 			end
 
-			net.Start("Smart Door Whitelist")
+			net.Start("Smart Door Set Whitelist")
 				net.WriteEntity(ent)
 				net.WriteTable(tbl)
 			net.SendToServer()
@@ -285,6 +349,31 @@ function TOOL:RightClick(tr)
 
 		ent:SetSmartDoor(false)
 		ent:SetNWEntity("DoorOwner", nil)
+	end
+
+	return true
+end
+
+function TOOL:Reload(tr)
+	if not tr.Entity or not IsValid(tr.Entity) or tr.HitWorld then
+		return false
+	end
+
+	local ent = tr.Entity
+	if not ent:IsSmartDoor() or ent:GetClass() ~= "prop_physics" then
+		return false
+	end
+
+	if self:GetOwner() ~= ent:GetNWEntity("DoorOwner") then
+		return false
+	end
+
+	if SERVER then
+		ent.WhitelistReady = false
+		net.Start("Smart Door Get Whitelist")
+			net.WriteEntity(ent)
+			net.WriteTable(ent.Whitelist)
+		net.Send(self:GetOwner())
 	end
 
 	return true
