@@ -86,6 +86,30 @@ if CLIENT then
 		end
 	end)
 
+	hook.Add("PreDrawHalos", "Smart Door", function()
+		if (!IsValid(LocalPlayer():GetActiveWeapon())) or (LocalPlayer():GetActiveWeapon():GetClass() ~= "gmod_tool") or (LocalPlayer():GetTool("smartdoor") == nil) then
+			return
+		end
+
+		local doors = {}
+		for _, ent in pairs(ents.FindByClass("prop_physics")) do
+			if (ent == LocalPlayer():GetEyeTrace().Entity) and (ent:GetNWEntity("DoorOwner") == LocalPlayer()) and (ent:IsSmartDoor()) then 
+				table.insert(doors, ent)
+			end
+		end
+		halo.Add(doors, HSVToColor(150, 1, 1), 2, 2, 2)
+
+		if CPPI then
+			local props = {}
+			for _, ent in pairs(ents.FindByClass("prop_physics")) do
+				if (ent == LocalPlayer():GetEyeTrace().Entity) and (ent:CPPIGetOwner() == LocalPlayer()) and (!ent:IsSmartDoor()) then
+					table.insert(props, ent)
+				end
+			end
+			halo.Add(props, color_white, 2, 2, 2)
+		end
+	end)
+
 	net.Receive("Smart Door Get Whitelist", function()
 		local ent = net.ReadEntity()
 		local tbl = net.ReadTable()
