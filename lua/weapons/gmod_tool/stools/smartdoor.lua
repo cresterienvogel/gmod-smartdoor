@@ -58,10 +58,11 @@ if CLIENT then
 		draw.SimpleText(text, font, x, y, color, xalign, yalign and yalign or TEXT_ALIGN_TOP)
 	end
 
-	local mat = Material("icon16/lock.png")
+	local mat, lp, tr = Material("icon16/lock.png")
 	hook.Add("HUDPaint", "Smart Door", function()
-	    local tr = LocalPlayer():GetEyeTraceNoCursor()
-		if IsValid(tr.Entity) and tr.HitPos:DistToSqr(LocalPlayer():EyePos()) < 22500 then
+		lp = LocalPlayer() 
+		tr = lp:GetEyeTraceNoCursor()
+		if IsValid(tr.Entity) and tr.HitPos:DistToSqr(lp:EyePos()) < 22500 then
 			local ent = tr.Entity
 			if not ent:IsSmartDoor() then 
 				return 
@@ -86,14 +87,18 @@ if CLIENT then
 		end
 	end)
 
+	local lp, wep
 	hook.Add("PreDrawHalos", "Smart Door", function()
-		if (!IsValid(LocalPlayer():GetActiveWeapon())) or (LocalPlayer():GetActiveWeapon():GetClass() ~= "gmod_tool") or (LocalPlayer():GetTool("smartdoor") == nil) then
+		lp = LocalPlayer()
+		wep = lp:GetActiveWeapon()
+
+		if (!IsValid(wep)) or (wep:GetClass() ~= "gmod_tool") or (lp:GetTool("smartdoor") == nil) then
 			return
 		end
 
 		local doors = {}
 		for _, ent in pairs(ents.FindByClass("prop_physics")) do
-			if (ent == LocalPlayer():GetEyeTrace().Entity) and (ent:GetNWEntity("DoorOwner") == LocalPlayer()) and (ent:IsSmartDoor()) then 
+			if (ent == lp:GetEyeTrace().Entity) and (ent:GetNWEntity("DoorOwner") == lp) and (ent:IsSmartDoor()) then 
 				table.insert(doors, ent)
 			end
 		end
@@ -102,7 +107,7 @@ if CLIENT then
 		if CPPI then
 			local props = {}
 			for _, ent in pairs(ents.FindByClass("prop_physics")) do
-				if (ent == LocalPlayer():GetEyeTrace().Entity) and (ent:CPPIGetOwner() == LocalPlayer()) and (!ent:IsSmartDoor()) then
+				if (ent == lp:GetEyeTrace().Entity) and (ent:CPPIGetOwner() == lp) and (!ent:IsSmartDoor()) then
 					table.insert(props, ent)
 				end
 			end
@@ -113,33 +118,33 @@ if CLIENT then
 	net.Receive("Smart Door Get Whitelist", function()
 		local ent = net.ReadEntity()
 		local tbl = net.ReadTable()
-	
+
 		local menu = DermaMenu()
-	
-		local Add = menu:AddSubMenu("Add to whitelist")
+
+		local add = menu:AddSubMenu("Add to whitelist")
 		for _, pl in pairs(player.GetAll()) do
 			if table.HasValue(tbl, pl) or pl == LocalPlayer() then
 				continue
 			end
-	
-			Add:AddOption(pl:Name(), function()
+
+			add:AddOption(pl:Name(), function()
 				net.Start("Smart Door Add Whitelist")
 					net.WriteEntity(ent)
 					net.WriteEntity(pl)
 				net.SendToServer()
 			end):SetIcon("icon16/user.png")
 		end
-	
-		local Remove = menu:AddSubMenu("Remove from whitelist")
+
+		local remove = menu:AddSubMenu("Remove from whitelist")
 		for _, pl in pairs(tbl) do
-			Remove:AddOption(pl:Name(), function()
+			remove:AddOption(pl:Name(), function()
 				net.Start("Smart Door Remove Whitelist")
 					net.WriteEntity(ent)
 					net.WriteEntity(pl)
 				net.SendToServer()
 			end):SetIcon("icon16/user_green.png")
 		end
-	
+
 		menu:MakePopup()
 		menu:Open()
 	end)
@@ -155,45 +160,49 @@ if SERVER then
 		local ent = net.ReadEntity()
 		local tbl = net.ReadTable()
 
-		if not IsValid(ent) or ent.WhitelistReady then
+		if not IsValid(ent) then
 			return
 		end
 
 		ent.Whitelist = tbl
-		ent.WhitelistReady = true
 	end)
 
-	net.Receive("Smart Door Add Whitelist", function()
+	net.Receive("Smart Door Add Whitelist", function(_, sender)
 		local ent = net.ReadEntity()
 		local pl = net.ReadEntity()
 
-		if not IsValid(ent) or ent.WhitelistReady or table.HasValue(ent.Whitelist, pl) then
+		if not IsValid(sender) or ent.OwnerID ~= sender:UniqueID() then
+			return
+		end
+
+		if not IsValid(ent) or not ent:IsSmartDoor() or table.HasValue(ent.Whitelist, pl) then
 			return
 		end
 
 		table.insert(ent.Whitelist, pl)
-		ent.WhitelistReady = true
 	end)
 
-	net.Receive("Smart Door Remove Whitelist", function()
+	net.Receive("Smart Door Remove Whitelist", function(_, sender)
 		local ent = net.ReadEntity()
 		local pl = net.ReadEntity()
 
-		if not IsValid(ent) or ent.WhitelistReady or not table.HasValue(ent.Whitelist, pl) then
+		if not IsValid(sender) or ent.OwnerID ~= sender:UniqueID() then
+			return
+		end
+
+		if not IsValid(ent) or not ent:IsSmartDoor() or not table.HasValue(ent.Whitelist, pl) then
 			return
 		end
 
 		table.RemoveByValue(ent.Whitelist, pl)
-		ent.WhitelistReady = true
 	end)
 
 	function ENTITY:SetSmartDoor(bool)
 		self:SetNWBool("SmartDoor", bool)
-	
+
 		self.OwnerID = 1
 
 		self.Whitelist = {}
-		self.WhitelistReady = false
 
 		self.DoorSound = ""
 		self.DoorMaterial = ""
@@ -205,14 +214,14 @@ if SERVER then
 		if not self:IsSmartDoor() then
 			return
 		end
-	
+
 		local material 
 		if self.DoorMaterial ~= "" then
 			material = self.DoorMaterial
 		else
 			material = "models/wireframe"
 		end
-	
+
 		if self:GetNWBool("SmartDoorOpened") then
 			local trace = {
 				start = self:GetPos(),
@@ -235,26 +244,17 @@ if SERVER then
 			self:SetNWBool("SmartDoorOpened", true)
 			self:SetMaterial(material)
 		end
-	
+
 		if self.DoorSound ~= "" then
 			self:EmitSound(self.DoorSound)
 		end
-
-		if not self.WhitelistReady then
-			self.WhitelistReady = true
-		end
 	end
-	
+
 	hook.Add("PlayerUse", "Smart Door", function(pl, ent)
 		if not timer.Exists("Smart Door Cooldown #" .. pl:UniqueID()) then
-			if pl:GetPos():Distance(ent:GetPos()) > 130 or pl:InVehicle() or not IsValid(ent) then
+			if pl:GetPos():Distance(ent:GetPos()) > 130 or pl:InVehicle() or not IsValid(ent) or not ent:IsSmartDoor() then
 				return
 			end
-	
-			if not ent:IsSmartDoor() then
-				return
-			end
-	
 			if table.HasValue(ent.Whitelist) or ent:GetNWEntity("DoorOwner") == pl then
 				ent:OpenSmartDoor()
 				timer.Create("Smart Door Cooldown #" .. pl:UniqueID(), 0.6, 1, function() end)
@@ -268,7 +268,6 @@ if SERVER then
 			if not ent:IsSmartDoor() then
 				continue
 			end
-
 			if ent.OwnerID == pl:UniqueID() then
 				ent:SetNWEntity("DoorOwner", pl)
 			end
@@ -348,8 +347,6 @@ function TOOL:LeftClick(tr)
 				net.WriteEntity(ent)
 				net.WriteTable(tbl)
 			net.SendToServer()
-		else
-			ent.WhitelistReady = true
 		end
 	end
 
@@ -393,7 +390,6 @@ function TOOL:Reload(tr)
 	end
 
 	if SERVER then
-		ent.WhitelistReady = false
 		net.Start("Smart Door Get Whitelist")
 			net.WriteEntity(ent)
 			net.WriteTable(ent.Whitelist)
