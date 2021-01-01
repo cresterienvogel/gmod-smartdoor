@@ -156,11 +156,11 @@ if SERVER then
 	util.AddNetworkString("Smart Door Add Whitelist")
 	util.AddNetworkString("Smart Door Remove Whitelist")
 
-	net.Receive("Smart Door Set Whitelist", function()
+	net.Receive("Smart Door Set Whitelist", function(_, sender)
 		local ent = net.ReadEntity()
 		local tbl = net.ReadTable()
 
-		if not IsValid(ent) then
+		if not IsValid(ent) or not IsValid(sender) or ent.OwnerID ~= sender:UniqueID() then
 			return
 		end
 
