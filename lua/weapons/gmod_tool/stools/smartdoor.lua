@@ -251,13 +251,13 @@ if SERVER then
 	end
 
 	hook.Add("PlayerUse", "Smart Door", function(pl, ent)
-		if not timer.Exists("Smart Door Cooldown #" .. pl:UniqueID()) then
+		if not timer.Exists("Smart Door Cooldown #" .. ent:EntIndex()) then
 			if pl:GetPos():Distance(ent:GetPos()) > 130 or pl:InVehicle() or not IsValid(ent) or not ent:IsSmartDoor() then
 				return
 			end
-			if table.HasValue(ent.Whitelist) or ent:GetNWEntity("DoorOwner") == pl then
+			if ent:GetNWEntity("DoorOwner") == pl or table.HasValue(ent.Whitelist, pl) then
 				ent:OpenSmartDoor()
-				timer.Create("Smart Door Cooldown #" .. pl:UniqueID(), 0.6, 1, function() end)
+				timer.Create("Smart Door Cooldown #" .. ent:EntIndex(), 0.25, 1, function() end)
 				return
 			end
 		end
